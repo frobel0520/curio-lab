@@ -1,0 +1,32 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:3000,https://www.curio-lab.workers.dev",
+    "PUBLIC_BASE_URL": "https://api.curio-lab.workers.dev",
+    "THREADS_API_BASE": "https://graph.threads.net",
+    "THREADS_AUTH_URL": "",
+    "THREADS_TOKEN_URL": "https://graph.threads.net/oauth/access_token",
+    "THREADS_APP_ID": ""
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SHARE_CARDS",
+      "id": "4fa91e6294584ae6a24b71e9af1ef464"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "curio-lab-share",
+      "database_id": "7bcb36ec-cd4f-4df1-ae9c-2478e3d8b014",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  }
+}

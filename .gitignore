@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.wrangler/
+.wrangler-dist/
+.dev.vars
+.env*.local
+npm-debug.log*
+*.tsbuildinfo
+artifacts/session-summaries/Progress.md
