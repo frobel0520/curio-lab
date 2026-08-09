@@ -64,25 +64,6 @@ Curio Lab 是一個以台灣繁體中文設計的互動工具實驗室。這裡�
 | 儲存 | Workers KV、D1 |
 | 測試 | Node.js 測試腳本、TypeScript、ESLint |
 
-## 本機啟動
-
-需要 Node.js 與 npm。
-
-```bash
-npm install
-npm run dev
-```
-
-開啟 `http://localhost:3000`。
-
-若要在本機前端連接已部署的分享 API，可建立 `.env.local`：
-
-```bash
-NEXT_PUBLIC_SHARE_API_URL=https://api.curio-lab.workers.dev
-```
-
-未設定時會使用本機分享流程。
-
 ## 隱私
 
 測驗答案與計算資料儲存在使用者的瀏覽器。只有在使用者主動按下分享結果時，圖卡與分享文案才會上傳，並建立最長 7 天的公開連結。
