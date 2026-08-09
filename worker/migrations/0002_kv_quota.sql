@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS usage_days (
+  day TEXT PRIMARY KEY,
+  uploads INTEGER NOT NULL DEFAULT 0,
+  image_reads INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS storage_usage (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  bytes_live INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO storage_usage (id, bytes_live) VALUES (1, 0)
+ON CONFLICT(id) DO NOTHING;
