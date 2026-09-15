@@ -13,6 +13,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-Hant">
+      <head>
+        {/* Harbor 維護畫面必須在內容出現前同步載入，不能改成 next/script */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="https://harbor-1wk.pages.dev/embed/maintenance.js" data-project="curio-lab" />
+      </head>
       <body>
         <header className="site-header">
           <Link className="wordmark" href="/" aria-label="好奇一下首頁">
