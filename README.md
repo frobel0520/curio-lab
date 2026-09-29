@@ -1,5 +1,9 @@
 # 好奇一下 Curio Lab
 
+> 把那些「一直有點想知道」的問題，做成簡單好玩的工具。
+
+## 概覽
+
 <p align="center">
   <img src="public/cat-personality/enfp.webp" alt="飛奔派對王貓格插圖" width="220" />
   <img src="public/cat-personality/intj.webp" alt="高台策士貓格插圖" width="220" />
@@ -7,7 +11,7 @@
 </p>
 
 <p align="center">
-  把那些「一直有點想知道」的問題，做成簡單好玩的工具。
+  
 </p>
 
 <p align="center">
@@ -20,7 +24,7 @@
 
 Curio Lab 是一個以台灣繁體中文設計的互動工具實驗室。這裡的結果不一定是標準答案，更像是一個重新觀察生活的起點：用幾分鐘整理一個平常不容易算清楚、卻又忍不住想知道的問題。
 
-## 現有工具
+## 主要功能／內容
 
 ### 主子帳本
 
@@ -52,6 +56,16 @@ Curio Lab 是一個以台灣繁體中文設計的互動工具實驗室。這裡�
     <td align="center"><img src="public/cat-personality/istp.webp" alt="靜音獵手" width="220" /><br /><strong>靜音獵手</strong></td>
   </tr>
 </table>
+
+## 現況與已知限制
+
+網站收錄主子帳本與 16 型貓格等工具；本次僅整理 README，未重新驗證網站可用性。
+
+## 授權與來源
+
+Repository 根目錄未見授權檔；此 README 不另行宣告使用或再散布權利。
+
+---
 
 ## 技術組成
 
