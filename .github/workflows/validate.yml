@@ -31,6 +31,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run worker:typecheck
       - run: npm test
+      - run: node --test scripts/publish-site-ci.test.mjs
       - run: npm run build
       - name: Verify headers survive static export
         run: cmp public/_headers out/_headers
