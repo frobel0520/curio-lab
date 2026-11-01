@@ -27,6 +27,8 @@ jobs:
           node-version: '24.22.1'
           cache: npm
       - run: npm ci
+      - name: Dependency audit (high/critical fails)
+        run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run worker:typecheck
