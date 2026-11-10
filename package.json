@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node tests/run-calculator-tests.cjs && node tests/run-cat-personality-tests.cjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/run-worker-quota-tests.mjs",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
@@ -36,8 +36,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "eslint": "^9.39.5",
-    "eslint-config-next": "16.4.3",
+    "oxlint": "1.76.0",
     "typescript": "^6.0.3",
     "wrangler": "^4.151.3"
   },
