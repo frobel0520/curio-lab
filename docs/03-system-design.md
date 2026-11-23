@@ -12,7 +12,7 @@
 
 - **零月費**：前端與分享 API 皆使用 Cloudflare Workers 免費方案；明確不採用需綁卡且有超額計費風險的 R2，改以 Workers KV + D1 搭配程式端硬配額替代（詳見 [`IMPLEMENTATION_NOTES.md`](../IMPLEMENTATION_NOTES.md)）。
 - **預設本機隱私**：測驗作答與試算草稿只存於瀏覽器 `localStorage`，僅在使用者主動點擊產生雲端分享連結時，才將去敏結果圖卡上傳至短期暫存（7 天 TTL）。
-- **靜態匯出與安全標頭**：Next.js 採 `output: "export"` 產出純靜態檔案（`out/`），搭配 `public/_headers` 強制安全標頭。
+- **靜態匯出與安全標頭**：Next.js 採 `output: "export"` 產出純靜態檔案（`out/`），搭配 `public/_headers` 強制安全標頭；建置後 `scripts/security-headers.mjs` 以各頁內嵌 script 的 SHA-256 補上 CSP `script-src`（只放行同源與 Harbor 維護外掛，不用 `'unsafe-inline'`）。
 
 ## 2. 架構總覽
 
@@ -38,7 +38,7 @@ lib/
   cat-personality/      20 題題庫、計分邏輯、16 型結果與 Canvas 圖卡
   share/cloud.ts        雲端分享 API 呼叫與失敗降級
 public/
-  _headers              CSP、X-Frame-Options: DENY、nosniff、Referrer-Policy
+  _headers              CSP（script-src 於建置時補上）、X-Frame-Options: DENY、nosniff、Referrer-Policy、Permissions-Policy、COOP same-origin
   cat-personality/      16 張預優化 WebP 插畫
 worker/
   src/index.ts          Share Worker 路由（/health、/v1/status、/v1/share-cards、/i/:id.png、/s/:id、Threads OAuth）
@@ -69,6 +69,6 @@ tests/                  計算機、貓格計分與 Worker 配額測試
 ## 5. 效能與品質驗證
 
 - **靜態資源優化**：16 張插畫預先壓縮為 WebP，圖卡渲染完全於瀏覽器端 Canvas 執行，不耗用伺服器 CPU。
-- **CI 自動驗證（`.github/workflows/validate.yml`）**：`npm audit --audit-level=high`、`oxlint`、`tsc --noEmit`（含 `worker/tsconfig.json`）、單元與配額測試、`next build` 及 `cmp public/_headers out/_headers`。
-- **正式站標頭稽核（`published-header-audit.mjs`）**：部署後實際請求正式站驗證 CSP 與安全標頭。
+- **CI 自動驗證（`.github/workflows/validate.yml`）**：`npm audit --audit-level=high`、`oxlint`、`tsc --noEmit`（含 `worker/tsconfig.json`）、單元與配額測試、`next build`，並確認 `out/_headers` 除 CSP 補上 `script-src` 外與 `public/_headers` 相同。
+- **正式站標頭稽核（`published-header-audit.mjs`）**：部署後實際請求正式站驗證 CSP（含 script-src 限制）、Permissions-Policy、COOP 與其他安全標頭。
 - **效能驗收紀錄**：正式站頁面載入分位數（p50/p95）與真實裝置量測尚未獨立記錄（待補）。

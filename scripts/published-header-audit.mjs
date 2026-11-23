@@ -2,7 +2,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 
 let report;
 try {
- const response=await fetch('https://www.curio-lab.workers.dev',{redirect:'manual',signal:AbortSignal.timeout(25000),headers:{accept:'text/html'}});
+ const response=await fetch(process.env.HEADER_AUDIT_URL??'https://www.curio-lab.workers.dev',{redirect:'manual',signal:AbortSignal.timeout(25000),headers:{accept:'text/html'}});
  const html=response.headers.get('content-type')?.toLowerCase().includes('text/html')===true;
  if(response.status!==200||!html)report={status:'unknown',reason:'NOT_HTML_200',httpStatus:response.status};
  else {
@@ -11,7 +11,10 @@ try {
   const exactly=(name,value)=>{const values=directive(name);return values?.length===1&&values[0]===value;};
   const checks={cspPresent:!!csp.trim(),baseSelf:exactly('base-uri',"'self'"),objectNone:exactly('object-src',"'none'"),
    frameNone:exactly('frame-ancestors',"'none'"),xFrameDeny:response.headers.get('x-frame-options')?.trim().toUpperCase()==='DENY',
-   noSniff:response.headers.get('x-content-type-options')?.trim().toLowerCase()==='nosniff'};
+   noSniff:response.headers.get('x-content-type-options')?.trim().toLowerCase()==='nosniff',
+   scriptSrcRestricted:(()=>{const values=directive('script-src');return !!values?.includes("'self'")&&!values.some(value=>["'unsafe-inline'","'unsafe-eval'",'*','https:','http:','data:','blob:'].includes(value));})(),
+   permissionsPolicy:!!response.headers.get('permissions-policy')?.trim(),
+   coopSameOrigin:response.headers.get('cross-origin-opener-policy')?.trim().toLowerCase()==='same-origin'};
   report={status:Object.values(checks).every(Boolean)?'matched':'finding',httpStatus:200,checks};
  }
  await response.body?.cancel();
