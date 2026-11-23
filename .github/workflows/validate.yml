@@ -33,7 +33,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run worker:typecheck
       - run: npm test
-      - run: node --test scripts/publish-site-ci.test.mjs
+      - run: node --test scripts/publish-site-ci.test.mjs scripts/security-headers.test.mjs
       - run: npm run build
-      - name: Verify headers survive static export
-        run: cmp public/_headers out/_headers
+      - name: Verify exported headers add only script-src to the CSP
+        run: |
+          diff <(grep -v '^  Content-Security-Policy:' public/_headers) <(grep -v '^  Content-Security-Policy:' out/_headers)
+          grep -q "^  Content-Security-Policy: .*script-src 'self' " out/_headers
