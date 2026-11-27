@@ -1,4 +1,4 @@
-import { QUOTA_LIMITS, dayKey, monthKey, quotaSnapshot, type DailyUsage, type Usage } from "./quota";
+import { QUOTA_LIMITS, dayKey, monthKey, quotaSnapshot, type DailyUsage, type Usage } from "./quota.ts";
 
 interface Env {
   DB: D1Database;
@@ -21,6 +21,64 @@ type ShareCardRow = {
   return_url: string;
   expires_at: number;
 };
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+const THREADS_STATE_COOKIE = "__Host-curio_threads_state";
+const CLEARED_THREADS_STATE_COOKIE = `${THREADS_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+
+function hasPngMagic(bytes: Uint8Array) {
+  if (bytes.byteLength < PNG_MAGIC.length) return false;
+  for (let i = 0; i < PNG_MAGIC.length; i++) {
+    if (bytes[i] !== PNG_MAGIC[i]) return false;
+  }
+  return true;
+}
+
+function readCookie(request: Request, name: string) {
+  const header = request.headers.get("cookie");
+  if (!header) return "";
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq !== -1 && part.slice(0, eq).trim() === name) {
+      return part.slice(eq + 1).trim();
+    }
+  }
+  return "";
+}
+
+function timingSafeEqual(a: string, b: string) {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  if (aBytes.byteLength !== bBytes.byteLength) return false;
+  let diff = 0;
+  for (let i = 0; i < aBytes.byteLength; i++) {
+    diff |= aBytes[i]! ^ bBytes[i]!;
+  }
+  return diff === 0;
+}
+
+async function signThreadsState(state: string, secret: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(state)));
+  const sigB64 = btoa(String.fromCharCode(...sig)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+  return `${state}.${sigB64}`;
+}
+
+async function verifyThreadsStateCookie(cookieValue: string, expectedState: string, secret: string) {
+  if (!cookieValue || !expectedState || !secret) return false;
+  const dot = cookieValue.indexOf(".");
+  if (dot <= 0) return false;
+  const cookieState = cookieValue.slice(0, dot);
+  if (!timingSafeEqual(cookieState, expectedState)) return false;
+  const expectedToken = await signThreadsState(cookieState, secret);
+  return timingSafeEqual(cookieValue, expectedToken);
+}
 
 const defaultUsage = (): Usage => ({ uploads: 0, image_reads: 0, bytes_uploaded: 0 });
 
@@ -215,11 +273,18 @@ async function uploadShareCard(request: Request, env: Env) {
   const caption = safeText(form.get("caption"), 500);
   const returnUrl = safeText(form.get("returnUrl"), 500);
 
-  if (!(image instanceof File) || image.type !== "image/png" || image.size < 1) {
+  if (!(image instanceof File) || image.type !== "image/png" || image.size < PNG_MAGIC.length) {
     return json({ error: "png_required" }, { status: 400 });
   }
   if (image.size > QUOTA_LIMITS.maxImageBytes) {
     return json({ error: "image_too_large", maxBytes: QUOTA_LIMITS.maxImageBytes }, { status: 413 });
+  }
+  const imageBytes = new Uint8Array(await image.arrayBuffer());
+  if (imageBytes.byteLength > QUOTA_LIMITS.maxImageBytes) {
+    return json({ error: "image_too_large", maxBytes: QUOTA_LIMITS.maxImageBytes }, { status: 413 });
+  }
+  if (!hasPngMagic(imageBytes)) {
+    return json({ error: "png_required" }, { status: 400 });
   }
   if (!title || !caption || !validReturnUrl(returnUrl, env)) {
     return json({ error: "invalid_metadata" }, { status: 400 });
@@ -227,10 +292,10 @@ async function uploadShareCard(request: Request, env: Env) {
   if (!await reserveClientUpload(request, env)) {
     return json({ error: "daily_client_limit_reached", fallback: true }, { status: 429 });
   }
-  if (!await reserveMonthlyUpload(env, image.size)) {
+  if (!await reserveMonthlyUpload(env, imageBytes.byteLength)) {
     return json({ error: "free_quota_guard_active", fallback: true }, { status: 503 });
   }
-  if (!await reserveDailyUpload(env) || !await reserveStorage(env, image.size)) {
+  if (!await reserveDailyUpload(env) || !await reserveStorage(env, imageBytes.byteLength)) {
     return json({ error: "free_daily_or_storage_guard_active", fallback: true }, { status: 503 });
   }
 
@@ -240,16 +305,16 @@ async function uploadShareCard(request: Request, env: Env) {
   const expiresAt = now + QUOTA_LIMITS.retentionDays * 86_400_000;
 
   try {
-    await env.SHARE_CARDS.put(objectKey, image.stream(), { expirationTtl: QUOTA_LIMITS.retentionDays * 86_400 });
+    await env.SHARE_CARDS.put(objectKey, imageBytes, { expirationTtl: QUOTA_LIMITS.retentionDays * 86_400 });
     await env.DB.prepare(`
       INSERT INTO share_cards
         (id, object_key, title, caption, return_url, byte_size, created_at, expires_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-    `).bind(id, objectKey, title, caption, returnUrl, image.size, now, expiresAt).run();
+    `).bind(id, objectKey, title, caption, returnUrl, imageBytes.byteLength, now, expiresAt).run();
   } catch (error) {
     await env.SHARE_CARDS.delete(objectKey);
     await env.DB.prepare("UPDATE storage_usage SET bytes_live = MAX(0, bytes_live - ?1) WHERE id = 1")
-      .bind(image.size).run();
+      .bind(imageBytes.byteLength).run();
     throw error;
   }
 
@@ -323,6 +388,7 @@ async function startThreadsOAuth(request: Request, env: Env) {
   const card = await findShareCard(env, shareId);
   if (!card) return json({ error: "share_not_found" }, { status: 404 });
   const state = randomToken(24);
+  const signedState = await signThreadsState(state, env.THREADS_APP_SECRET!);
   const callbackUrl = `${publicBase(env)}/v1/threads/callback`;
   await env.DB.prepare(`
     INSERT INTO oauth_states (state, share_id, return_url, created_at, expires_at)
@@ -334,7 +400,24 @@ async function startThreadsOAuth(request: Request, env: Env) {
   authorizationUrl.searchParams.set("scope", "threads_basic,threads_content_publish");
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("state", state);
-  return Response.redirect(authorizationUrl.toString(), 302);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: authorizationUrl.toString(),
+      "cache-control": "no-store",
+      "set-cookie": `${THREADS_STATE_COOKIE}=${signedState}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
+    },
+  });
+}
+
+function callbackFailure(message: string, status: number) {
+  return new Response(message, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "set-cookie": CLEARED_THREADS_STATE_COOKIE,
+    },
+  });
 }
 
 async function threadsCallback(request: Request, env: Env) {
@@ -342,44 +425,71 @@ async function threadsCallback(request: Request, env: Env) {
   const url = new URL(request.url);
   const state = url.searchParams.get("state") ?? "";
   const code = url.searchParams.get("code") ?? "";
+  const stateCookie = readCookie(request, THREADS_STATE_COOKIE);
+  if (!code || !await verifyThreadsStateCookie(stateCookie, state, env.THREADS_APP_SECRET!)) {
+    return callbackFailure("Invalid or expired authorization.", 400);
+  }
   const oauthState = await env.DB.prepare(`
     SELECT state, share_id, return_url FROM oauth_states WHERE state = ?1 AND expires_at > ?2
   `).bind(state, Date.now()).first<{ state: string; share_id: string; return_url: string }>();
-  if (!oauthState || !code) return new Response("Invalid or expired authorization.", { status: 400 });
+  if (!oauthState) return callbackFailure("Invalid or expired authorization.", 400);
   await env.DB.prepare("DELETE FROM oauth_states WHERE state = ?1").bind(state).run();
   const card = await findShareCard(env, oauthState.share_id);
-  if (!card) return new Response("Shared result expired.", { status: 404 });
+  if (!card) return callbackFailure("Shared result expired.", 404);
 
   const callbackUrl = `${publicBase(env)}/v1/threads/callback`;
-  const tokenUrl = new URL(env.THREADS_TOKEN_URL);
-  tokenUrl.searchParams.set("client_id", env.THREADS_APP_ID);
-  tokenUrl.searchParams.set("client_secret", env.THREADS_APP_SECRET!);
-  tokenUrl.searchParams.set("code", code);
-  tokenUrl.searchParams.set("grant_type", "authorization_code");
-  tokenUrl.searchParams.set("redirect_uri", callbackUrl);
-  const tokenResponse = await fetch(tokenUrl, { method: "POST" });
+  const tokenResponse = await fetch(env.THREADS_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.THREADS_APP_ID,
+      client_secret: env.THREADS_APP_SECRET!,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: callbackUrl,
+    }),
+  });
   const tokenData = await tokenResponse.json<{ access_token?: string; error?: unknown }>();
-  if (!tokenResponse.ok || !tokenData.access_token) return new Response("Threads authorization failed.", { status: 502 });
+  if (!tokenResponse.ok || !tokenData.access_token) return callbackFailure("Threads authorization failed.", 502);
 
   const apiBase = env.THREADS_API_BASE.replace(/\/$/, "");
-  const containerUrl = new URL(`${apiBase}/me/threads`);
-  containerUrl.searchParams.set("media_type", "IMAGE");
-  containerUrl.searchParams.set("image_url", `${publicBase(env)}/i/${card.id}.png`);
-  containerUrl.searchParams.set("text", `${card.caption} ${card.return_url}`);
-  containerUrl.searchParams.set("alt_text", card.title);
-  containerUrl.searchParams.set("access_token", tokenData.access_token);
-  const containerResponse = await fetch(containerUrl, { method: "POST" });
+  const containerResponse = await fetch(`${apiBase}/me/threads`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${tokenData.access_token}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      media_type: "IMAGE",
+      image_url: `${publicBase(env)}/i/${card.id}.png`,
+      text: `${card.caption} ${card.return_url}`,
+      alt_text: card.title,
+    }),
+  });
   const container = await containerResponse.json<{ id?: string }>();
-  if (!containerResponse.ok || !container.id) return new Response("Threads media creation failed.", { status: 502 });
+  if (!containerResponse.ok || !container.id) return callbackFailure("Threads media creation failed.", 502);
 
-  const publishUrl = new URL(`${apiBase}/me/threads_publish`);
-  publishUrl.searchParams.set("creation_id", container.id);
-  publishUrl.searchParams.set("access_token", tokenData.access_token);
-  const publishResponse = await fetch(publishUrl, { method: "POST" });
-  if (!publishResponse.ok) return new Response("Threads publishing failed.", { status: 502 });
+  const publishResponse = await fetch(`${apiBase}/me/threads_publish`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${tokenData.access_token}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      creation_id: container.id,
+    }),
+  });
+  if (!publishResponse.ok) return callbackFailure("Threads publishing failed.", 502);
   const returnUrl = new URL(oauthState.return_url);
   returnUrl.searchParams.set("threads", "published");
-  return Response.redirect(returnUrl.toString(), 302);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: returnUrl.toString(),
+      "cache-control": "no-store",
+      "set-cookie": CLEARED_THREADS_STATE_COOKIE,
+    },
+  });
 }
 
 async function handleRequest(request: Request, env: Env) {

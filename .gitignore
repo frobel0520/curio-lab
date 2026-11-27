@@ -7,4 +7,5 @@ out/
 .env*.local
 npm-debug.log*
 *.tsbuildinfo
+.agents/
 artifacts/session-summaries/Progress.md
